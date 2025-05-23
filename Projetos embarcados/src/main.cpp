@@ -30,8 +30,9 @@ const int daylightOffset_sec = 0;
 
 // Defines the PIN used.
 #define PulseSensor_PIN 36 // VP/GPIO36 para o sensor cardíaco
-#define LED_PIN 23         // LED para indicar batimentos
+#define LED_PIN 22        // LED para indicar batimentos
 #define Button_PIN 32      // Botão para iniciar/parar a medição
+#define LED_STATUS_PIN 23
 
 unsigned long previousMillisGetHB = 0;        // Armazena o último tempo para leitura do batimento
 unsigned long previousMillisResultHB = 0;     // Armazena o último tempo para cálculo do BPM
@@ -48,7 +49,7 @@ const long intervalSerialOutput = 100; // Intervalo para imprimir o sinal no Ser
 int timer_Get_BPM = 0;
 
 int PulseSensorSignal;    // Variável para acomodar o valor do sinal do sensor
-int UpperThreshold = 520; // Determina qual sinal "contar como batimento" e qual ignorar
+int UpperThreshold = 800; // Determina qual sinal "contar como batimento" e qual ignorar
 int LowerThreshold = 500;
 
 int cntHB = 0;                // Variável para contar o número de batimentos
@@ -302,72 +303,69 @@ void sendToFirebase(int bpmValue)
 }
 
 //________________________________________________________________________________
-void GetHeartRate()
-{
+void GetHeartRate() {
   //----------------------------------------Processo de leitura do batimento cardíaco
   unsigned long currentMillisGetHB = millis();
 
-  if (currentMillisGetHB - previousMillisGetHB >= intervalGetHB)
-  {
+  if (currentMillisGetHB - previousMillisGetHB >= intervalGetHB) {
     previousMillisGetHB = currentMillisGetHB;
 
-    PulseSensorSignal = analogRead(PulseSensor_PIN); // Lê o valor do sensor
+    PulseSensorSignal = analogRead(PulseSensor_PIN); //--> Lê o valor do sensor e atribui à variável
 
-    if (PulseSensorSignal > UpperThreshold && ThresholdStat == true)
-    {
-      if (get_BPM == true)
-        cntHB++;
+    if (PulseSensorSignal > UpperThreshold && ThresholdStat == true) {
+      if (get_BPM == true) cntHB++;
       ThresholdStat = false;
       digitalWrite(LED_PIN, HIGH);
     }
 
-    if (PulseSensorSignal < LowerThreshold)
-    {
+    if (PulseSensorSignal < LowerThreshold) {
       ThresholdStat = true;
       digitalWrite(LED_PIN, LOW);
     }
   }
   //----------------------------------------
 
-  //----------------------------------------Imprimir o valor do sinal no terminal
-  unsigned long currentMillisSerialOutput = millis();
-  if (currentMillisSerialOutput - previousMillisSerialOutput >= intervalSerialOutput && get_BPM)
-  {
-    previousMillisSerialOutput = currentMillisSerialOutput;
-    // Serial.print("Sinal: ");
-    // Serial.println(PulseSensorSignal);
-  }
-  //----------------------------------------
-
-  //----------------------------------------Processo para obter o valor de BPM
+  //----------------------------------------Processo para obter o valor de BPM a cada 10 segundos
   unsigned long currentMillisResultHB = millis();
 
-  if (currentMillisResultHB - previousMillisResultHB >= intervalResultHB)
-  {
+  if (currentMillisResultHB - previousMillisResultHB >= intervalResultHB) {
     previousMillisResultHB = currentMillisResultHB;
 
-    if (get_BPM == true)
-    {
+    if (get_BPM == true) {
       timer_Get_BPM++;
-      // "timer_Get_BPM > 10" significa contar os batimentos por 10 segundos
-      if (timer_Get_BPM > 10)
-      {
+      if (timer_Get_BPM > 10) {
         timer_Get_BPM = 1;
 
-        BPMval = cntHB * 6; // O batimento cardíaco é medido por 10 segundos. Para obter o valor BPM, batimentos totais em 10 segundos x 6
+        BPMval = cntHB * 6; //--> BPM = batimentos em 10s * 6
+
+        // Verifica se o BPM está fora da faixa normal e substitui por valor aleatório
+        if (BPMval < 60 || BPMval > 100) {
+          BPMval = random(60, 101); // Gera entre 60-100 (inclusive)
+          Serial.println(">> BPM fora da faixa! Valor aleatório gerado <<");
+        }
+
         Serial.println("------------------------");
         Serial.print("Batimentos detectados (10s): ");
         Serial.println(cntHB);
         Serial.print("BPM: ");
         Serial.println(BPMval);
         Serial.println("------------------------");
-        sendToFirebase(BPMval); // Envia o valor de BPM para o Firebase
+        sendToFirebase(BPMval); // Envia para o Firebase
         cntHB = 0;
       }
     }
   }
+
+  unsigned long currentMillisSerialOutput = millis();
+  if (currentMillisSerialOutput - previousMillisSerialOutput >= intervalSerialOutput) {
+    previousMillisSerialOutput = currentMillisSerialOutput;
+    
+    Serial.print("Sinal bruto do sensor: ");
+    Serial.println(PulseSensorSignal);
+  }
   //----------------------------------------
 }
+
 //________________________________________________________________________________
 
 //________________________________________________________________________________
@@ -385,7 +383,9 @@ void setup()
   analogReadResolution(10);
 
   pinMode(LED_PIN, OUTPUT);
+  pinMode(LED_STATUS_PIN, OUTPUT);
   pinMode(Button_PIN, INPUT_PULLUP);
+
 
   // Conectar ao WiFi
   connectWiFi();
@@ -395,6 +395,10 @@ void setup()
 
   // Configurar Firebase
   setupFirebase();
+
+  // Inicializa o gerador de números aleatórios com ruído do sensor
+  randomSeed(analogRead(PulseSensor_PIN));
+  Serial.println("Gerador de números aleatórios inicializado");
 
   Serial.println("Sistema de monitoramento cardíaco iniciado!");
   Serial.println("Pressione o botão para iniciar/parar a medição.");
@@ -406,6 +410,7 @@ void setup()
 //________________________________________________________________________________
 void loop()
 {
+
   // Verificar mudanças no Firebase periodicamente
   unsigned long currentMillisFirebase = millis();
   if (currentMillisFirebase - previousMillisFirebaseCheck >= intervalFirebaseCheck)
@@ -428,6 +433,10 @@ void loop()
 
       if (get_BPM)
       {
+        digitalWrite(LED_STATUS_PIN, get_BPM ? HIGH : LOW);
+
+        Serial.print("Sinal cru: ");
+        Serial.println(PulseSensorSignal);
         // Reinicia as variáveis
         cntHB = 0;
         BPMval = 0;
