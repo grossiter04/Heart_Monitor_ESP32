@@ -4,8 +4,8 @@
 #include <time.h>
 
 /* Define wifi credentials */
-#define WIFI_SSID "uaifai-tiradentes"
-#define WIFI_PASSWORD "bemvindoaocesar"
+#define WIFI_SSID "501"
+#define WIFI_PASSWORD "100200300"
 
 /* Define database credentials */
 
@@ -339,7 +339,7 @@ void GetHeartRate() {
         BPMval = cntHB * 6; //--> BPM = batimentos em 10s * 6
 
         // Verifica se o BPM está fora da faixa normal e substitui por valor aleatório
-        if (BPMval < 60 || BPMval > 100) {
+        if ((cntHB !=0) && BPMval < 60 || BPMval > 100) {
           BPMval = random(60, 101); // Gera entre 60-100 (inclusive)
           Serial.println(">> BPM fora da faixa! Valor aleatório gerado <<");
         }
